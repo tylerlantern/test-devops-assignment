@@ -1,0 +1,7 @@
+# Argo CD install: kubectl apply -k argocd/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.1.8/manifests/install.yaml
+  - application.yaml

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-next
+  namespace: hello-next
+spec:
+  selector:
+    app: hello-next
+  ports:
+    - port: 80
+      targetPort: 3000
