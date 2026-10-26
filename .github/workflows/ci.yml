@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REPOSITORY: hello-next
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Lint and build
+        working-directory: application
+        run: |
+          npm install
+          npm run lint
+          npm run build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          docker build -t "$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA" -t "$REGISTRY/$ECR_REPOSITORY:latest" application
+          docker push "$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: Update image tag in k8s manifests
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          sed -i "s|image: .*hello-next:.*|image: $REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA|" k8s/deployment.yaml
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git commit -am "deploy: hello-next $GITHUB_SHA [skip ci]"
+          git push
+
+      # make sure the new pods come up straight away instead of waiting for Argo CD
+      - name: Restart deployment
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          echo "$KUBECONFIG_DATA" | base64 -d > kubeconfig
+          kubectl --kubeconfig kubeconfig -n hello-next rollout restart deployment/hello-next
